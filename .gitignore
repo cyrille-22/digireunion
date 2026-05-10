@@ -26,5 +26,9 @@ coverage/
 .vscode/
 .idea/
 
+# Mobile app files
+mobile/node_modules/
+mobile/.expo/
+
 # Optional npm cache
 .npm/

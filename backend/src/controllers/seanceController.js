@@ -1,33 +1,30 @@
 const pool = require('../config/database');
 const { generateHash } = require('../utils/helpers');
 
-// ── OUVRIR UNE SÉANCE ─────────────────────────────────────────
+// ── OUVRIR UNE SÉANCE ────────────────────────────────────────
 const ouvrirSeance = async (req, res) => {
   const tenant_id = req.user.tenant_id;
   const created_by = req.user.id;
+  const { president_seance_id, notes_ouverture } = req.body;
 
   try {
-    // Vérifier qu'il n'y a pas déjà une séance ouverte
     const seanceOuverte = await pool.query(
-      `SELECT id FROM seances
-       WHERE tenant_id = $1 AND statut = 'ouverte'`,
+      `SELECT id FROM seances WHERE tenant_id = $1 AND statut = 'ouverte'`,
       [tenant_id]
     );
 
     if (seanceOuverte.rows.length > 0) {
       return res.status(400).json({
-        message: 'Une séance est déjà ouverte. Clôturez-la avant d\'en ouvrir une nouvelle.'
+        message: "Une séance est déjà ouverte. Clôturez-la avant d'en ouvrir une nouvelle."
       });
     }
 
-    // Calculer le numéro de la séance
     const lastSeance = await pool.query(
       `SELECT MAX(numero) as derniere FROM seances WHERE tenant_id = $1`,
       [tenant_id]
     );
     const numero = (lastSeance.rows[0].derniere || 0) + 1;
 
-    // Récupérer le reliquat de la dernière séance
     const lastCaisse = await pool.query(
       `SELECT caisse_theorique FROM seances
        WHERE tenant_id = $1 AND statut = 'close'
@@ -37,12 +34,14 @@ const ouvrirSeance = async (req, res) => {
     const reliquat = lastCaisse.rows.length > 0
       ? parseFloat(lastCaisse.rows[0].caisse_theorique) : 0;
 
-    // Créer la séance
     const result = await pool.query(
-      `INSERT INTO seances (tenant_id, numero, caisse_theorique, created_by)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO seances
+        (tenant_id, numero, caisse_theorique, created_by,
+         president_seance_id, notes_ouverture)
+       VALUES ($1,$2,$3,$4,$5,$6)
        RETURNING *`,
-      [tenant_id, numero, reliquat, created_by]
+      [tenant_id, numero, reliquat, created_by,
+       president_seance_id || null, notes_ouverture || null]
     );
 
     res.status(201).json({
@@ -56,7 +55,6 @@ const ouvrirSeance = async (req, res) => {
     res.status(500).json({ message: 'Erreur serveur' });
   }
 };
-
 // ── POINTAGE DES PRÉSENCES ────────────────────────────────────
 const pointerPresence = async (req, res) => {
   const { id } = req.params;

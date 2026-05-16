@@ -2,8 +2,11 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../api/axios';
 import toast from 'react-hot-toast';
-import { Plus, Pencil, X, Check, Wallet } from 'lucide-react';
-
+import { Plus, Pencil, X, Check, Wallet, Users, UserPlus } from 'lucide-react';
+const inscrireMembre = (data) => api.post('/cotisations/inscription', data);
+const getMembresTontine = (id) =>
+  api.get(`/cotisations/tontine/${id}/membres`).then(r => r.data);
+const getAllMembers = () => api.get('/members').then(r => r.data);
 // ── API TONTINES ──────────────────────────────────────────────
 const getTontines = () => api.get('/tontines').then(r => r.data);
 const createTontine = (data) => api.post('/tontines', data);
@@ -247,13 +250,215 @@ function RubriqueModal({ rubrique, onClose, onSave }) {
     </div>
   );
 }
+// ── MODAL INSCRIPTION MEMBRES ─────────────────────────────────
+function InscriptionModal({ tontine, onClose }) {
+  const queryClient = useQueryClient();
+  const [partsMap, setPartsMap] = useState({});
 
+  const { data: allMembresData } = useQuery({
+    queryKey: ['members'],
+    queryFn: getAllMembers
+  });
+
+  const { data: inscritData, refetch } = useQuery({
+    queryKey: ['membres-tontine', tontine.id],
+    queryFn: () => getMembresTontine(tontine.id)
+  });
+
+  const allMembres  = allMembresData?.membres   || [];
+  const inscrits    = inscritData?.membres       || [];
+  const inscritIds  = new Set(inscrits.map(m => m.member_id));
+
+  const mutation = useMutation({
+    mutationFn: (data) => inscrireMembre(data),
+    onSuccess: () => {
+      refetch();
+      queryClient.invalidateQueries(['membres-tontine']);
+    },
+    onError: (err) => toast.error(err.response?.data?.message || 'Erreur')
+  });
+
+  const handleInscrire = (memberId) => {
+    const nb_parts = parseInt(partsMap[memberId] || 1);
+    mutation.mutate({
+      tontine_id: tontine.id,
+      member_id:  memberId,
+      nb_parts
+    });
+    toast.success('Membre inscrit !');
+  };
+
+  const handleModifier = (memberId) => {
+    const nb_parts = parseInt(partsMap[memberId] ||
+      inscrits.find(m => m.member_id === memberId)?.nb_parts || 1);
+    mutation.mutate({
+      tontine_id: tontine.id,
+      member_id:  memberId,
+      nb_parts
+    });
+    toast.success('Parts mises à jour !');
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center
+      justify-center z-50">
+      <div className="bg-[#161b27] border border-[#2e3a50] rounded-2xl
+        p-6 w-full max-w-2xl max-h-[90vh] flex flex-col">
+
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-semibold text-white">
+              Inscription — {tontine.nom}
+            </h2>
+            <p className="text-xs text-gray-500 mt-1">
+              {parseFloat(tontine.montant_part).toLocaleString('fr-FR')} F/part
+              · {inscrits.length} membre(s) inscrit(s)
+            </p>
+          </div>
+          <button onClick={onClose}
+            className="text-gray-400 hover:text-white">
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Résumé */}
+        <div className="bg-[#1e2535] rounded-xl p-4 mb-4">
+          <div className="flex justify-between items-center">
+            <div>
+              <p className="text-xs text-gray-500 mb-1">
+                Total attendu par séance
+              </p>
+              <p className="text-xl font-bold text-green-400 font-mono">
+                {inscrits.reduce((s, m) =>
+                  s + parseFloat(m.montant_du || 0), 0
+                ).toLocaleString('fr-FR')} F
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-gray-500 mb-1">Parts totales</p>
+              <p className="text-xl font-bold text-blue-400 font-mono">
+                {inscrits.reduce((s, m) => s + (m.nb_parts || 0), 0)}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Liste membres */}
+        <div className="flex-1 overflow-y-auto space-y-2 mb-4">
+          {allMembres.map(m => {
+            const estInscrit = inscritIds.has(m.id);
+            const infoInscrit = inscrits.find(i => i.member_id === m.id);
+            const nbParts = partsMap[m.id] !== undefined
+              ? partsMap[m.id]
+              : infoInscrit?.nb_parts || 1;
+            const montant = parseInt(nbParts || 1) *
+              parseFloat(tontine.montant_part);
+
+            return (
+              <div key={m.id}
+                className={`flex items-center gap-4 rounded-xl px-4 py-3
+                  border transition ${estInscrit
+                    ? 'bg-green-900/10 border-green-800/30'
+                    : 'bg-[#1e2535] border-transparent'}`}>
+
+                {/* Avatar */}
+                <div className={`w-9 h-9 rounded-full flex items-center
+                  justify-center text-xs font-bold flex-shrink-0 ${
+                  estInscrit
+                    ? 'bg-green-900/40 text-green-400'
+                    : 'bg-blue-900/40 text-blue-400'}`}>
+                  {m.nom_complet.split(' ')
+                    .map(n => n[0]).join('').slice(0,2).toUpperCase()}
+                </div>
+
+                {/* Nom + rôle */}
+                <div className="flex-1">
+                  <p className={`font-medium text-sm ${
+                    estInscrit ? 'text-green-400' : 'text-white'}`}>
+                    {m.nom_complet}
+                  </p>
+                  <p className="text-xs text-gray-500 capitalize">
+                    {m.role}
+                    {estInscrit && (
+                      <span className="ml-2 text-green-400">
+                        · {infoInscrit?.nb_parts} part(s) inscrite(s)
+                      </span>
+                    )}
+                  </p>
+                </div>
+
+                {/* Sélecteur de parts */}
+                <div className="flex items-center gap-2">
+                  <div className="flex flex-col items-end">
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-gray-500">Parts :</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="20"
+                        value={nbParts}
+                        onChange={e => setPartsMap(prev => ({
+                          ...prev,
+                          [m.id]: e.target.value
+                        }))}
+                        className="w-14 bg-[#252d40] border border-[#3a4960]
+                          rounded-lg px-2 py-1 text-white text-center
+                          text-sm font-mono focus:outline-none
+                          focus:border-blue-500"
+                      />
+                    </div>
+                    <span className="text-xs text-gray-500 mt-0.5">
+                      = {montant.toLocaleString('fr-FR')} F/séance
+                    </span>
+                  </div>
+
+                  {/* Bouton inscrire/modifier */}
+                  {estInscrit ? (
+                    <button
+                      onClick={() => handleModifier(m.id)}
+                      className="flex items-center gap-1 bg-blue-900/40
+                        text-blue-400 hover:bg-blue-900/60 px-3 py-1.5
+                        rounded-lg text-xs font-medium transition"
+                    >
+                      <Pencil size={14} /> Modifier
+                    </button>
+                               
+                  ) : (
+                                 
+                    <button
+                      onClick={() => handleInscrire(m.id)}
+                      className="flex items-center gap-1 bg-green-600
+                        hbg-green-700 text-white px-3 py-1.5
+                        rounded-lg text-xs font-medium transition"
+                    >
+                      <UserPlus size={12} /> Inscrire
+                    </button>
+                  )}
+                  
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Footer */}
+        <button onClick={onClose}
+          className="w-full bg-[#1e2535] border border-[#2e3a50]
+            text-gray-400 py-3 rounded-xl hover:text-white transition">
+          Fermer
+        </button>
+      </div>
+    </div>
+  );
+}
 // ── PAGE PRINCIPALE ───────────────────────────────────────────
 export default function Tontines() {
   const [showTontineModal, setShowTontineModal] = useState(false);
   const [showRubriqueModal, setShowRubriqueModal] = useState(false);
   const [selectedTontine, setSelectedTontine] = useState(null);
   const [selectedRubrique, setSelectedRubrique] = useState(null);
+  const [showInscription, setShowInscription] = useState(null);
   const [tab, setTab] = useState('tontines');
   const queryClient = useQueryClient();
 
@@ -385,6 +590,13 @@ export default function Tontines() {
                     className="text-gray-400 hover:text-blue-400 transition">
                     <Pencil size={14} />
                   </button>
+                  <button
+                    onClick={() => setShowInscription(t)}
+                    className="text-gray-400 hover:text-green-400 transition"
+                    title="Gérer les inscriptions"
+                  >
+                    <Users size={14} />
+                  </button>
                 </div>
               </div>
 
@@ -477,6 +689,13 @@ export default function Tontines() {
           rubrique={selectedRubrique}
           onClose={() => { setShowRubriqueModal(false); setSelectedRubrique(null); }}
           onSave={(form) => rubriqueMutation.mutate(form)}
+        />
+      )}
+      {/* Modal Inscription */}
+      {showInscription && (
+        <InscriptionModal
+          tontine={showInscription}
+          onClose={() => setShowInscription(null)}
         />
       )}
     </div>

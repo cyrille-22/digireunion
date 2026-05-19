@@ -12,12 +12,16 @@ const seanceRoutes     = require('./src/routes/seances');
 const cotisationRoutes = require('./src/routes/cotisations');
 const epargneRoutes    = require('./src/routes/epargne');
 const prets2Routes     = require('./src/routes/prets2');
+const deductionRoutes  = require('./src/routes/deductions');
+const boufferRoutes    = require('./src/routes/bouffer');
+const dashboardRoutes = require('./src/routes/dashboard');
+
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 app.use(helmet());
-
+app.use('/api/v1/dashboard', dashboardRoutes);
 app.use('/api/v1/auth',          authRoutes);
 app.use('/api/v1/members',       memberRoutes);
 app.use('/api/v1/tontines',      tontineRoutes);
@@ -26,6 +30,8 @@ app.use('/api/v1/seances',       seanceRoutes);
 app.use('/api/v1/cotisations',   cotisationRoutes);
 app.use('/api/v1/epargne',       epargneRoutes);
 app.use('/api/v1/prets',         prets2Routes);
+app.use('/api/v1/deductions',    deductionRoutes);
+app.use('/api/v1/bouffer',       boufferRoutes);
 
 app.get('/', async (req, res) => {
   try {

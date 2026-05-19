@@ -2,7 +2,16 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../api/axios';
 import toast from 'react-hot-toast';
-import { Plus, Pencil, X, Check, Wallet, Users, UserPlus } from 'lucide-react';
+import { Plus, Pencil, X, Check, Wallet, Users, UserPlus,  Trash2} from 'lucide-react';
+// API Déductions
+const getDeductions = () =>
+  api.get('/deductions').then(r => r.data);
+const createDeduction = (data) =>
+  api.post('/deductions', data);
+const updateDeduction = (id, data) =>
+  api.put(`/deductions/${id}`, data);
+const deleteDeduction = (id) =>
+  api.delete(`/deductions/${id}`);
 const inscrireMembre = (data) => api.post('/cotisations/inscription', data);
 const getMembresTontine = (id) =>
   api.get(`/cotisations/tontine/${id}/membres`).then(r => r.data);
@@ -452,6 +461,147 @@ function InscriptionModal({ tontine, onClose }) {
     </div>
   );
 }
+
+// ── MODAL DÉDUCTION ───────────────────────────────────────────
+function DeductionModal({ deduction, onClose, onSave }) {
+  const [form, setForm] = useState({
+    nom:          deduction?.nom          || '',
+    type_montant: deduction?.type_montant || 'fixe',
+    montant:      deduction?.montant      || '',
+    pourcentage:  deduction?.pourcentage  || '',
+    applicable_a: deduction?.applicable_a || 'toutes',
+    ordre:        deduction?.ordre        || 1,
+  });
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center
+      justify-center z-50">
+      <div className="bg-[#161b27] border border-[#2e3a50]
+        rounded-2xl p-6 w-full max-w-md">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-lg font-semibold text-white">
+            {deduction ? 'Modifier' : 'Nouvelle'} rubrique de déduction
+          </h2>
+          <button onClick={onClose}
+            className="text-gray-400 hover:text-white">
+            <X size={20} />
+          </button>
+        </div>
+
+        <form onSubmit={e => { e.preventDefault(); onSave(form); }}>
+          <div className="mb-4">
+            <label className="block text-sm text-gray-400 mb-2">
+              Nom de la déduction
+            </label>
+            <input type="text" value={form.nom}
+              onChange={e => setForm({...form, nom: e.target.value})}
+              placeholder="Ex: Jeton de présence, Construction foyer..."
+              className="w-full bg-[#1e2535] border border-[#2e3a50]
+                rounded-xl px-4 py-3 text-white placeholder-gray-600
+                focus:outline-none focus:border-blue-500"
+              required />
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-sm text-gray-400 mb-2">
+              Type de montant
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                ['fixe', '💰 Montant fixe'],
+                ['pourcentage', '📊 Pourcentage']
+              ].map(([val, label]) => (
+                <div key={val}
+                  onClick={() => setForm({...form, type_montant: val})}
+                  className={`border rounded-xl p-3 cursor-pointer
+                    text-center transition ${form.type_montant === val
+                      ? 'bg-blue-900/20 border-blue-800/50 text-white'
+                      : 'bg-[#1e2535] border-[#2e3a50] text-gray-400'}`}>
+                  <p className="text-sm font-medium">{label}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {form.type_montant === 'fixe' ? (
+            <div className="mb-4">
+              <label className="block text-sm text-gray-400 mb-2">
+                Montant fixe (FCFA)
+              </label>
+              <input type="number" min="0" value={form.montant}
+                onChange={e => setForm({...form, montant: e.target.value})}
+                placeholder="Ex: 5000"
+                className="w-full bg-[#1e2535] border border-[#2e3a50]
+                  rounded-xl px-4 py-3 text-white placeholder-gray-600
+                  focus:outline-none focus:border-blue-500 font-mono"
+                required />
+            </div>
+          ) : (
+            <div className="mb-4">
+              <label className="block text-sm text-gray-400 mb-2">
+                Pourcentage (%)
+              </label>
+              <input type="number" min="0" max="100"
+                step="0.01" value={form.pourcentage}
+                onChange={e => setForm({
+                  ...form, pourcentage: e.target.value
+                })}
+                placeholder="Ex: 5"
+                className="w-full bg-[#1e2535] border border-[#2e3a50]
+                  rounded-xl px-4 py-3 text-white placeholder-gray-600
+                  focus:outline-none focus:border-blue-500 font-mono"
+                required />
+            </div>
+          )}
+
+          <div className="mb-4">
+            <label className="block text-sm text-gray-400 mb-2">
+              Ordre d'affichage
+            </label>
+            <input type="number" min="1" value={form.ordre}
+              onChange={e => setForm({...form, ordre: e.target.value})}
+              className="w-full bg-[#1e2535] border border-[#2e3a50]
+                rounded-xl px-4 py-3 text-white focus:outline-none
+                focus:border-blue-500 font-mono" />
+          </div>
+
+          <div class="mb-6">
+            <label className="block text-sm text-gray-400 mb-2">
+              Applicable à
+            </label>
+            <select value={form.applicable_a}
+              onChange={e => setForm({
+                ...form, applicable_a: e.target.value
+              })}
+              className="w-full bg-[#1e2535] border border-[#2e3a50]
+                rounded-xl px-4 py-3 text-white focus:outline-none
+                focus:border-blue-500">
+              <option value="toutes">Toutes les tontines</option>
+              <option value="petite">Petite tontine uniquement</option>
+              <option value="grande">Grande tontine uniquement</option>
+            </select>
+          </div>
+
+          <div className="flex gap-3">
+            <button type="button" onClick={onClose}
+              className="flex-1 bg-[#1e2535] border border-[#2e3a50]
+                text-gray-400 py-3 rounded-xl hover:text-white transition">
+              Annuler
+            </button>
+            <button type="submit"
+              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white
+                py-3 rounded-xl font-semibold transition flex items-center
+                justify-center gap-2">
+              <Check size={16} />
+              {deduction ? 'Enregistrer' : 'Créer'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ── PAGE PRINCIPALE ───────────────────────────────────────────
 export default function Tontines() {
   const [showTontineModal, setShowTontineModal] = useState(false);
@@ -461,6 +611,16 @@ export default function Tontines() {
   const [showInscription, setShowInscription] = useState(null);
   const [tab, setTab] = useState('tontines');
   const queryClient = useQueryClient();
+
+  const [showDeductionModal, setShowDeductionModal] = useState(false);
+  const [selectedDeduction, setSelectedDeduction]   = useState(null);
+
+  const { data: deductionsData, refetch: refetchDeductions } = useQuery({
+    queryKey: ['deductions'],
+    queryFn: getDeductions
+  });
+
+  const deductions = deductionsData?.deductions || [];
 
   const { data: tontinesData, isLoading: loadingT } = useQuery({
     queryKey: ['tontines'],
@@ -509,55 +669,83 @@ export default function Tontines() {
     tour_role: 'Tour de rôle', tirage: 'Tirage au sort', enchere: 'Enchères'
   };
 
+
+  const deductionMutation = useMutation({
+  mutationFn: (data) => selectedDeduction
+    ? updateDeduction(selectedDeduction.id, data)
+    : createDeduction(data),
+  onSuccess: () => {
+    toast.success(selectedDeduction
+      ? 'Déduction mise à jour !'
+      : 'Déduction créée !');
+    refetchDeductions();
+    setShowDeductionModal(false);
+    setSelectedDeduction(null);
+  },
+  onError: (err) => toast.error(
+    err.response?.data?.message || 'Erreur'
+  )
+});
+
+const deleteMutation = useMutation({
+  mutationFn: (id) => deleteDeduction(id),
+  onSuccess: () => {
+    toast.success('Déduction supprimée !');
+    refetchDeductions();
+  },
+  onError: (err) => toast.error(
+    err.response?.data?.message || 'Erreur'
+  )
+});
+
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Configuration</h1>
-          <p className="text-gray-400 text-sm mt-1">
-            Tontines et rubriques de prêts
-          </p>
-        </div>
-        <button
-          onClick={() => {
-            if (tab === 'tontines') {
-              setSelectedTontine(null);
-              setShowTontineModal(true);
-            } else {
-              setSelectedRubrique(null);
-              setShowRubriqueModal(true);
-            }
-          }}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-medium transition"
-        >
-          <Plus size={16} />
-          {tab === 'tontines' ? 'Nouvelle tontine' : 'Nouvelle rubrique'}
-        </button>
-      </div>
+      {/* Header avec bouton conditionnel selon l'onglet */}
+<div className="flex items-center justify-between mb-6">
+  <div>
+    <h1 className="text-2xl font-bold text-white">Configuration</h1>
+    <p className="text-gray-400 text-sm mt-1">
+      Tontines · Rubriques de prêts · Déductions
+    </p>
+  </div>
+  {/* Bouton conditionnel */}
+  {tab === 'tontines' && (
+    <button
+      onClick={() => { setSelectedTontine(null); setShowTontineModal(true); }}
+      className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700
+        text-white px-4 py-2.5 rounded-xl font-medium transition">
+      <Plus size={16} /> Nouvelle tontine
+    </button>
+  )}
+  {tab === 'rubriques' && (
+    <button
+      onClick={() => { setSelectedRubrique(null); setShowRubriqueModal(true); }}
+      className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700
+        text-white px-4 py-2.5 rounded-xl font-medium transition">
+      <Plus size={16} /> Nouvelle rubrique
+    </button>
+  )}
+  
+</div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-[#1e2535] p-1 rounded-xl mb-6 w-fit">
-        <button
-          onClick={() => setTab('tontines')}
-          className={`px-5 py-2 rounded-lg text-sm font-medium transition
-            ${tab === 'tontines'
-              ? 'bg-[#161b27] text-white shadow'
-              : 'text-gray-400 hover:text-white'}`}
-        >
-          Tontines ({tontines.length})
-        </button>
-        <button
-          onClick={() => setTab('rubriques')}
-          className={`px-5 py-2 rounded-lg text-sm font-medium transition
-            ${tab === 'rubriques'
-              ? 'bg-[#161b27] text-white shadow'
-              : 'text-gray-400 hover:text-white'}`}
-        >
-          Rubriques de prêts ({rubriques.length})
-        </button>
-      </div>
 
+      <div className="flex gap-1 bg-[#1e2535] p-1 rounded-xl mb-6 w-fit">
+        {[
+          ['tontines',   `Tontines (${tontines.length})`],
+          ['rubriques',  `Rubriques prêts (${rubriques.length})`],
+          ['deductions', `Déductions (${deductions.length})`],
+        ].map(([key, label]) => (
+          <button key={key} onClick={() => setTab(key)}
+            className={`px-5 py-2 rounded-lg text-sm font-medium transition ${
+              tab === key
+                ? 'bg-[#161b27] text-white shadow'
+                : 'text-gray-400 hover:text-white'}`}>
+            {label}
+          </button>
+        ))}
+      </div>           
       {/* TONTINES */}
       {tab === 'tontines' && (
         <div className="grid grid-cols-2 gap-4">
@@ -675,7 +863,110 @@ export default function Tontines() {
           ))}
         </div>
       )}
+      {/* DÉDUCTIONS */}
+        {tab === 'deductions' && (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-sm text-gray-400">
+                  Ces déductions sont automatiquement proposées
+                  lors du bénéfice (bouffer)
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setSelectedDeduction(null);
+                  setShowDeductionModal(true);
+                }}
+                className="flex items-center gap-2 bg-blue-600
+                  hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl
+                  font-medium transition">
+                <Plus size={16} /> Nouvelle déduction
+              </button>
+            </div>
 
+            {deductions.length === 0 ? (
+              <div className="bg-[#161b27] border border-[#2e3a50]
+                rounded-xl p-10 text-center">
+                <p className="text-gray-500 mb-2">
+                  Aucune déduction configurée
+                </p>
+                <p className="text-xs text-gray-600">
+                  Ex: Jeton de présence, Construction foyer,
+                  Épargne construction...
+                </p>
+              </div>
+            ) : (
+              <div className="bg-[#161b27] border border-[#2e3a50]
+                rounded-xl overflow-hidden">
+                <div className="grid grid-cols-6 gap-3 px-4 py-3
+                  bg-[#1e2535] text-xs text-gray-500 font-mono
+                  uppercase tracking-wider">
+                  <div className="col-span-2">Nom</div>
+                  <div>Type</div>
+                  <div>Montant</div>
+                  <div>Applicable à</div>
+                  <div>Actions</div>
+                </div>
+                {deductions.map(d => (
+                  <div key={d.id}
+                    className="grid grid-cols-6 gap-3 px-4 py-3
+                      border-b border-[#2e3a50] last:border-0
+                      items-center text-sm hover:bg-[#1e2535]/50
+                      transition">
+                    <div className="col-span-2">
+                      <p className="text-white font-medium">{d.nom}</p>
+                      <p className="text-xs text-gray-500">
+                        Ordre : {d.ordre}
+                      </p>
+                    </div>
+                    <div>
+                      <span className={`px-2 py-1 rounded-md text-xs
+                        font-mono ${d.type_montant === 'fixe'
+                          ? 'bg-blue-900/40 text-blue-400'
+                          : 'bg-purple-900/40 text-purple-400'}`}>
+                        {d.type_montant}
+                      </span>
+                    </div>
+                    <div className="text-white font-mono">
+                      {d.type_montant === 'fixe'
+                        ? `${parseFloat(d.montant)
+                            .toLocaleString('fr-FR')} F`
+                        : `${(parseFloat(d.pourcentage) * 100)
+                            .toFixed(1)}%`}
+                    </div>
+                    <div className="text-gray-400 text-xs capitalize">
+                      {d.applicable_a}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          setSelectedDeduction(d);
+                          setShowDeductionModal(true);
+                        }}
+                        className="text-gray-400 hover:text-blue-400
+                          transition">
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (confirm(
+                            `Supprimer la déduction "${d.nom}" ?`
+                          )) {
+                            deleteMutation.mutate(d.id);
+                          }
+                        }}
+                        className="text-gray-400 hover:text-red-400
+                          transition">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       {/* Modals */}
       {showTontineModal && (
         <TontineModal
@@ -696,6 +987,17 @@ export default function Tontines() {
         <InscriptionModal
           tontine={showInscription}
           onClose={() => setShowInscription(null)}
+        />
+      )}
+
+      {showDeductionModal && (
+        <DeductionModal
+          deduction={selectedDeduction}
+          onClose={() => {
+            setShowDeductionModal(false);
+            setSelectedDeduction(null);
+          }}
+          onSave={(form) => deductionMutation.mutate(form)}
         />
       )}
     </div>

@@ -15,6 +15,8 @@ const prets2Routes     = require('./src/routes/prets2');
 const deductionRoutes  = require('./src/routes/deductions');
 const boufferRoutes    = require('./src/routes/bouffer');
 const dashboardRoutes = require('./src/routes/dashboard');
+const pvRoutes = require('./src/routes/pv');
+const nouvellesRoutes = require('./src/routes/nouvelles');
 
 
 const app = express();
@@ -32,6 +34,8 @@ app.use('/api/v1/epargne',       epargneRoutes);
 app.use('/api/v1/prets',         prets2Routes);
 app.use('/api/v1/deductions',    deductionRoutes);
 app.use('/api/v1/bouffer',       boufferRoutes);
+app.use('/api/v1/pv', pvRoutes);
+app.use('/api/v1/seances', nouvellesRoutes);
 
 app.get('/', async (req, res) => {
   try {

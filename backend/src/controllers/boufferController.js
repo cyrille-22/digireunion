@@ -63,18 +63,15 @@ const preparerBouffer = async (req, res) => {
     // Récupérer le nom de la tontine pour filtrer
       const nomTontine = tontine.rows[0].nom.toLowerCase();
 
+      // Récupérer TOUTES les déductions actives
+      // sans filtre complexe — le filtre par tontine
+      // se fait côté application
       const deductions = await pool.query(
         `SELECT * FROM rubriques_deduction
         WHERE tenant_id = $1 AND actif = TRUE
-        AND (
-          applicable_a = 'toutes'
-          OR (applicable_a = 'petite' AND $2 ILIKE '%petite%')
-          OR (applicable_a = 'grande' AND $2 ILIKE '%grande%')
-          OR applicable_a = $3
-        )
         ORDER BY ordre ASC`,
-        [tenant_id, tontine.rows[0].nom, tontine_id]
-      );
+        [tenant_id]
+      ); 
 
     // Calculer le montant de chaque déduction
     const deductionsCalculees = deductions.rows.map(d => {

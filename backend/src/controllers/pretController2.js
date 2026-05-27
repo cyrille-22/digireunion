@@ -222,6 +222,22 @@ const rembourserPret = async (req, res) => {
       });
     }
 
+    // Vérifier que le montant ne dépasse pas le reste
+      if (parseFloat(montant) > resteARegler + 1) {
+        return res.status(400).json({
+          message: `Montant trop élevé. Reste à régler : ` +
+                  `${resteARegler.toLocaleString('fr-FR')} F`
+        });
+      }
+
+      // Vérifier que le prêt n'est pas déjà soldé
+      if (resteARegler <= 0) {
+        return res.status(400).json({
+          message: 'Ce prêt est déjà entièrement remboursé'
+        });
+      }
+
+
     const ratioInteret    = parseFloat(p.montant_interet) /
       parseFloat(p.montant_total_du);
     const montantInteret  = parseFloat(montant) * ratioInteret;

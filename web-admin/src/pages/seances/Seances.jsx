@@ -47,6 +47,26 @@ const confirmerBouffer = (data) =>
 const getDeductions = () =>
   api.get('/deductions').then(r => r.data);
 
+// API Nouvelles, Ordre du jour, Divers
+const getNouvellesSeance = (id) =>
+  api.get(`/seances/nouvelles/${id}`).then(r => r.data);
+const ajouterNouvelle = (data) =>
+  api.post('/seances/nouvelles', data);
+const supprimerNouvelle = (id) =>
+  api.delete(`/seances/nouvelles/${id}`);
+const getOrdreJour = (id) =>
+  api.get(`/seances/ordre-du-jour/${id}`).then(r => r.data);
+const ajouterPoint = (data) =>
+  api.post('/seances/ordre-du-jour', data);
+const updatePoint = (id, data) =>
+  api.put(`/seances/ordre-du-jour/${id}`, data);
+const supprimerPoint = (id) =>
+  api.delete(`/seances/ordre-du-jour/${id}`);
+const ajouterDivers = (data) =>
+  api.post('/seances/divers', data);
+const getDivers = (id) =>
+  api.get(`/seances/divers/${id}`).then(r => r.data);
+
 // ── MODAL OUVERTURE SÉANCE ────────────────────────────────────
 function OuvertureModal({ membres, seancePrecedente, onClose, onOuvrir }) {
   const [presidentId, setPresidentId] = useState('');
@@ -920,32 +940,91 @@ function RubriquesModal({ seanceId, membres, onClose, onDone }) {
   };
 
   // ── REMBOURSEMENT ────────────────────────────────────────
-  const handleRemboursement = async (e) => {
-    e.preventDefault();
-    if (!selectedPret || !montant) {
-      toast.error('Sélectionnez un prêt et entrez le montant');
-      return;
+    const handleRemboursement = async (e) => {
+  e.preventDefault();
+  if (!selectedPret || !montant) {
+    toast.error('Sélectionnez un prêt et entrez le montant');
+    return;
+  }
+  setLoading(true);
+  try {
+    const res = await rembourserPret({
+      pret_id:   selectedPret,
+      montant:   parseFloat(montant),
+      seance_id: seanceId
+    });
+    toast.success(res.data.message);
+    setMontant('');
+    setSelectedPret('');
+    setPretsMembre([]);
+    setSelectedMembre('');
+
+    // ── NOUVEAU : recharger les prêts du membre ──
+    // pour mettre à jour le statut
+    refetchPrets();
+
+
+    {pretsMembre
+  .filter(p => p.statut === 'en_cours') // ← Afficher seulement les prêts en cours
+  .map(p => (
+    <div key={p.id}
+      onClick={() => {
+        setSelectedPret(p.id);
+        setMontant(
+          (parseFloat(p.montant_total_du) /
+          parseFloat(p.nb_echeances)).toFixed(0)
+        );
+      }}
+      className={`border rounded-xl p-3 mb-2 cursor-pointer
+        transition ${selectedPret === p.id
+          ? 'bg-blue-900/20 border-blue-800/50'
+          : 'bg-[#1e2535] border-[#2e3a50]'}`}>
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-white text-sm font-medium">
+            {p.rubrique_nom}
+          </p>
+          <p className="text-xs text-gray-500">
+            Échéance suggérée :
+            {(parseFloat(p.montant_total_du) /
+              parseFloat(p.nb_echeances))
+              .toLocaleString('fr-FR')} F
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-red-400 font-mono font-bold text-sm">
+            {parseFloat(p.reste_a_regler)
+              .toLocaleString('fr-FR')} F
+          </p>
+          <p className="text-xs text-gray-500">Reste à régler</p>
+        </div>
+      </div>
+    </div>
+  ))
+}
+
+{/* Message si aucun prêt en cours */}
+{pretsMembre.filter(p => p.statut === 'en_cours').length === 0
+  && selectedMembre && (
+  <div className="bg-green-900/20 border border-green-800/30
+    rounded-xl p-4 text-center">
+    <p className="text-green-400 text-sm">
+      ✅ Ce membre n'a aucun prêt en cours
+    </p>
+  </div>
+)}
+    // Si prêt soldé — retirer de la liste
+    if (res.data.statut_pret === 'solde') {
+      toast.success('🎉 Prêt entièrement soldé !');
     }
-    setLoading(true);
-    try {
-      const res = await rembourserPret({
-        pret_id:   selectedPret,
-        montant:   parseFloat(montant),
-        seance_id: seanceId
-      });
-      toast.success(res.data.message);
-      setMontant('');
-      setSelectedPret('');
-      setPretsMembre([]);
-      setSelectedMembre('');
-      refetchPrets();
-      onDone();
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Erreur');
-    } finally {
-      setLoading(false);
-    }
-  };
+
+    onDone();
+  } catch (err) {
+    toast.error(err.response?.data?.message || 'Erreur');
+  } finally {
+    setLoading(false);
+  }
+};
 
   // ── GAV ──────────────────────────────────────────────────
   const handleGAV = async (type) => {
@@ -2245,6 +2324,507 @@ function BoufferModal({ seanceId, membres, tontines, onClose, onDone }) {
   );
 }
 
+// ── MODAL SÉANCE COMPLÈTE ─────────────────────────────────────
+function SeanceCompleteModal({ seanceId, membres, token, onClose }) {
+  const [tab, setTab] = useState('ordre');
+  const queryClient   = useQueryClient();
+
+  // Ordre du jour
+  const [nouveauPoint, setNouveauPoint] = useState('');
+
+  // Nouvelles familiales
+  const [membreNom, setMembreNom]       = useState('');
+  const [memberId, setMemberId]         = useState('');
+  const [typeNouvelle, setTypeNouvelle] = useState('autre');
+  const [description, setDescription]  = useState('');
+
+  // Divers
+  const [contenuDivers, setContenuDivers] = useState('');
+  const [auteurId, setAuteurId]           = useState('');
+
+  const { data: ordreData, refetch: refetchOrdre } = useQuery({
+    queryKey: ['ordre-du-jour', seanceId],
+    queryFn: () => getOrdreJour(seanceId)
+  });
+
+  const { data: nouvellesData, refetch: refetchNouvelles } = useQuery({
+    queryKey: ['nouvelles', seanceId],
+    queryFn: () => getNouvellesSeance(seanceId)
+  });
+
+  const { data: diversData, refetch: refetchDivers } = useQuery({
+    queryKey: ['divers', seanceId],
+    queryFn: () => getDivers(seanceId)
+  });
+
+  const points   = ordreData?.points   || [];
+  const nouvelles = nouvellesData?.nouvelles || [];
+  const divers   = diversData?.divers   || [];
+
+  // Points par défaut
+  const pointsDefaut = [
+    'Nouvelles familiales',
+    'Rappel de la dernière séance',
+    'Finances',
+    'Divers'
+  ];
+
+  const handleAjouterPoint = async (point) => {
+    try {
+      await ajouterPoint({
+        seance_id: seanceId,
+        point,
+        ordre: points.length + 1
+      });
+      toast.success('Point ajouté !');
+      setNouveauPoint('');
+      refetchOrdre();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Erreur');
+    }
+  };
+
+  const handleUpdatePoint = async (id, statut) => {
+    try {
+      await updatePoint(id, { statut });
+      refetchOrdre();
+    } catch (err) {
+      toast.error('Erreur');
+    }
+  };
+
+  const handleSupprimerPoint = async (id) => {
+    try {
+      await supprimerPoint(id);
+      refetchOrdre();
+    } catch (err) {
+      toast.error('Erreur');
+    }
+  };
+
+  const handleAjouterNouvelle = async (e) => {
+    e.preventDefault();
+    try {
+      await ajouterNouvelle({
+        seance_id:     seanceId,
+        membre_nom:    membreNom,
+        member_id:     memberId || undefined,
+        type_nouvelle: typeNouvelle,
+        description
+      });
+      toast.success('Nouvelle ajoutée !');
+      setMembreNom('');
+      setMemberId('');
+      setDescription('');
+      refetchNouvelles();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Erreur');
+    }
+  };
+
+  const handleSupprimerNouvelle = async (id) => {
+    try {
+      await supprimerNouvelle(id);
+      refetchNouvelles();
+    } catch (err) {
+      toast.error('Erreur');
+    }
+  };
+
+  const handleAjouterDivers = async (e) => {
+    e.preventDefault();
+    try {
+      await ajouterDivers({
+        seance_id: seanceId,
+        contenu:   contenuDivers,
+        auteur_id: auteurId || undefined
+      });
+      toast.success('Point divers ajouté !');
+      setContenuDivers('');
+      refetchDivers();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Erreur');
+    }
+  };
+
+  const typeNouvelleColors = {
+    deces:     { bg: 'bg-gray-900/40',   text: 'text-gray-400',   label: '⚫ Décès'     },
+    naissance: { bg: 'bg-blue-900/40',   text: 'text-blue-400',   label: '👶 Naissance'  },
+    mariage:   { bg: 'bg-pink-900/40',   text: 'text-pink-400',   label: '💍 Mariage'    },
+    maladie:   { bg: 'bg-amber-900/40',  text: 'text-amber-400',  label: '🏥 Maladie'    },
+    autre:     { bg: 'bg-purple-900/40', text: 'text-purple-400', label: '📌 Autre'      }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center
+      justify-center z-50">
+      <div className="bg-[#161b27] border border-[#2e3a50] rounded-2xl
+        p-6 w-full max-w-2xl max-h-[90vh] flex flex-col">
+
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-white">
+            📋 Gestion de la séance
+          </h2>
+          <div className="flex items-center gap-3">
+            {/* Bouton télécharger PV */}
+            
+              <a  href={`/api/v1/pv/${seanceId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 bg-red-600
+                hover:bg-red-700 text-white px-3 py-1.5 rounded-lg
+                text-xs font-medium transition">
+              📄 Télécharger PV
+            </a>
+            <button onClick={onClose}
+              className="text-gray-400 hover:text-white transition">
+              <X size={20} />
+            </button>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-1 bg-[#1e2535] p-1 rounded-xl mb-4">
+          {[
+            ['ordre',    '📋 Ordre du jour'],
+            ['nouvelles','👨‍👩‍👧 Nouvelles familiales'],
+            ['divers',   '💬 Divers'],
+          ].map(([key, label]) => (
+            <button key={key}
+              onClick={() => setTab(key)}
+              className={`flex-1 px-3 py-2 rounded-lg text-xs
+                font-medium transition ${tab === key
+                  ? 'bg-[#161b27] text-white shadow'
+                  : 'text-gray-400 hover:text-white'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+
+          {/* ── ORDRE DU JOUR ── */}
+          {tab === 'ordre' && (
+            <div className="space-y-3">
+              {/* Points par défaut */}
+              <div>
+                <p className="text-xs text-gray-500 font-mono
+                  uppercase tracking-wider mb-2">
+                  Points standards
+                </p>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {pointsDefaut.map((p, i) => (
+                    <button key={i}
+                      onClick={() => handleAjouterPoint(p)}
+                      className="bg-[#1e2535] border border-[#2e3a50]
+                        text-gray-400 hover:text-white hover:border-blue-800/50
+                        px-3 py-1.5 rounded-lg text-xs transition">
+                      + {p}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Ajouter un point personnalisé */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={nouveauPoint}
+                  onChange={e => setNouveauPoint(e.target.value)}
+                  placeholder="Ajouter un point personnalisé..."
+                  className="flex-1 bg-[#1e2535] border border-[#2e3a50]
+                    rounded-xl px-4 py-2 text-white text-sm
+                    placeholder-gray-600 focus:outline-none
+                    focus:border-blue-500"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && nouveauPoint.trim()) {
+                      handleAjouterPoint(nouveauPoint.trim());
+                    }
+                  }}
+                />
+                <button
+                  onClick={() => {
+                    if (nouveauPoint.trim()) {
+                      handleAjouterPoint(nouveauPoint.trim());
+                    }
+                  }}
+                  className="bg-blue-600 hover:bg-blue-700 text-white
+                    px-4 py-2 rounded-xl text-sm transition">
+                  Ajouter
+                </button>
+              </div>
+
+              {/* Liste des points */}
+              {points.length === 0 ? (
+                <div className="text-center py-6 text-gray-500 text-sm">
+                  Aucun point ajouté — cliquez sur les points standards
+                  ou ajoutez un point personnalisé
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {points.map((p, i) => (
+                    <div key={p.id}
+                      className={`flex items-center gap-3 rounded-xl
+                        px-4 py-3 border transition ${
+                        p.statut === 'traite'
+                          ? 'bg-green-900/10 border-green-800/30'
+                          : 'bg-[#1e2535] border-[#2e3a50]'}`}>
+                      <span className="text-gray-500 font-mono
+                        text-xs w-5">{i + 1}.</span>
+                      <span className={`flex-1 text-sm ${
+                        p.statut === 'traite'
+                          ? 'text-green-400 line-through'
+                          : 'text-white'}`}>
+                        {p.point}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        {p.statut !== 'traite' ? (
+                          <button
+                            onClick={() =>
+                              handleUpdatePoint(p.id, 'traite')}
+                            className="text-xs bg-green-900/30
+                              text-green-400 hover:bg-green-900/50
+                              px-2 py-1 rounded-lg transition">
+                            ✓ Traité
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() =>
+                              handleUpdatePoint(p.id, 'en_attente')}
+                            className="text-xs bg-amber-900/30
+                              text-amber-400 hover:bg-amber-900/50
+                              px-2 py-1 rounded-lg transition">
+                            ↩ Rouvrir
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleSupprimerPoint(p.id)}
+                          className="text-gray-500 hover:text-red-400
+                            transition">
+                          <X size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── NOUVELLES FAMILIALES ── */}
+          {tab === 'nouvelles' && (
+            <div className="space-y-4">
+              <form onSubmit={handleAjouterNouvelle}
+                className="bg-[#1e2535] rounded-xl p-4 space-y-3">
+                <p className="text-sm font-medium text-white mb-2">
+                  Ajouter une nouvelle
+                </p>
+
+                {/* Type de nouvelle */}
+                <div className="grid grid-cols-5 gap-2">
+                  {Object.entries(typeNouvelleColors).map(
+                    ([key, val]) => (
+                      <button key={key} type="button"
+                        onClick={() => setTypeNouvelle(key)}
+                        className={`p-2 rounded-lg text-xs text-center
+                          transition border ${typeNouvelle === key
+                            ? `${val.bg} ${val.text} border-current`
+                            : 'bg-[#252d40] text-gray-500 border-transparent'}`}>
+                        {val.label}
+                      </button>
+                    )
+                  )}
+                </div>
+
+                {/* Membre */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">
+                      Membre (optionnel)
+                    </label>
+                    <select value={memberId}
+                      onChange={e => {
+                        setMemberId(e.target.value);
+                        const m = membres.find(
+                          mb => mb.id === e.target.value
+                        );
+                        if (m) setMembreNom(m.nom_complet);
+                      }}
+                      className="w-full bg-[#252d40] border border-[#3a4960]
+                        rounded-lg px-3 py-2 text-white text-sm
+                        focus:outline-none focus:border-blue-500">
+                      <option value="">Sélectionner...</option>
+                      {membres.map(m => (
+                        <option key={m.id} value={m.id}>
+                          {m.nom_complet}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">
+                      Nom (si non membre)
+                    </label>
+                    <input type="text" value={membreNom}
+                      onChange={e => setMembreNom(e.target.value)}
+                      placeholder="Nom de la personne"
+                      className="w-full bg-[#252d40] border border-[#3a4960]
+                        rounded-lg px-3 py-2 text-white text-sm
+                        placeholder-gray-600 focus:outline-none
+                        focus:border-blue-500"
+                      required />
+                  </div>
+                </div>
+
+                {/* Description */}
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">
+                    Description
+                  </label>
+                  <textarea value={description}
+                    onChange={e => setDescription(e.target.value)}
+                    placeholder="Ex: annonce les funérailles de sa cousine..."
+                    rows={2}
+                    className="w-full bg-[#252d40] border border-[#3a4960]
+                      rounded-lg px-3 py-2 text-white text-sm
+                      placeholder-gray-600 focus:outline-none
+                      focus:border-blue-500 resize-none"
+                    required />
+                </div>
+
+                <button type="submit"
+                  className="w-full bg-blue-600 hover:bg-blue-700
+                    text-white py-2 rounded-lg text-sm font-medium
+                    transition flex items-center justify-center gap-2">
+                  <Check size={14} /> Ajouter la nouvelle
+                </button>
+              </form>
+
+              {/* Liste des nouvelles */}
+              {nouvelles.length === 0 ? (
+                <div className="text-center py-6 text-gray-500 text-sm">
+                  Aucune nouvelle familiale enregistrée
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {nouvelles.map(n => {
+                    const typeInfo = typeNouvelleColors[n.type_nouvelle]
+                      || typeNouvelleColors.autre;
+                    return (
+                      <div key={n.id}
+                        className={`flex items-start gap-3 rounded-xl
+                          px-4 py-3 border ${typeInfo.bg}
+                          border-current/20`}>
+                        <span className={`text-sm font-mono
+                          flex-shrink-0 ${typeInfo.text}`}>
+                          {typeInfo.label.split(' ')[0]}
+                        </span>
+                        <div className="flex-1">
+                          <p className={`text-sm font-medium
+                            ${typeInfo.text}`}>
+                            {n.membre_nom}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {n.description}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleSupprimerNouvelle(n.id)}
+                          className="text-gray-500 hover:text-red-400
+                            transition flex-shrink-0">
+                          <X size={14} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── DIVERS ── */}
+          {tab === 'divers' && (
+            <div className="space-y-4">
+              <form onSubmit={handleAjouterDivers}
+                className="bg-[#1e2535] rounded-xl p-4 space-y-3">
+                <p className="text-sm font-medium text-white mb-2">
+                  Ajouter un point divers
+                </p>
+
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">
+                    Auteur (optionnel)
+                  </label>
+                  <select value={auteurId}
+                    onChange={e => setAuteurId(e.target.value)}
+                    className="w-full bg-[#252d40] border border-[#3a4960]
+                      rounded-lg px-3 py-2 text-white text-sm
+                      focus:outline-none focus:border-blue-500">
+                    <option value="">Sélectionner un membre...</option>
+                    {membres.map(m => (
+                      <option key={m.id} value={m.id}>
+                        {m.nom_complet} ({m.role})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">
+                    Contenu
+                  </label>
+                  <textarea value={contenuDivers}
+                    onChange={e => setContenuDivers(e.target.value)}
+                    placeholder="Ex: Le président encourage les membres à redoubler d'efforts..."
+                    rows={3}
+                    className="w-full bg-[#252d40] border border-[#3a4960]
+                      rounded-lg px-3 py-2 text-white text-sm
+                      placeholder-gray-600 focus:outline-none
+                      focus:border-blue-500 resize-none"
+                    required />
+                </div>
+
+                <button type="submit"
+                  className="w-full bg-purple-600 hover:bg-purple-700
+                    text-white py-2 rounded-lg text-sm font-medium
+                    transition flex items-center justify-center gap-2">
+                  <Check size={14} /> Ajouter
+                </button>
+              </form>
+
+              {/* Liste divers */}
+              {divers.length === 0 ? (
+                <div className="text-center py-6 text-gray-500 text-sm">
+                  Aucun point divers enregistré
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {divers.map(d => (
+                    <div key={d.id}
+                      className="bg-[#1e2535] border border-[#2e3a50]
+                        rounded-xl px-4 py-3">
+                      {d.auteur_nom && (
+                        <p className="text-xs text-purple-400
+                          font-medium mb-1">
+                          {d.auteur_nom}
+                        </p>
+                      )}
+                      <p className="text-sm text-gray-300">
+                        {d.contenu}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── PAGE PRINCIPALE ───────────────────────────────────────────
 export default function Seances() {
   const [tab, setTab]                     = useState('seance');
@@ -2259,6 +2839,7 @@ export default function Seances() {
   const [page, setPage]                   = useState(1);
   const [showRubriques, setShowRubriques] = useState(false);
   const [showBouffer, setShowBouffer] = useState(false);
+  const [showSeanceComplete, setShowSeanceComplete] = useState(false);
 
 useEffect(() => {
   const checkSeanceOuverte = async () => {
@@ -2458,6 +3039,16 @@ useEffect(() => {
                   <span className="text-green-400 font-medium">
                     Séance #{activeSeance.numero} en cours
                   </span>
+                  {/* Dans le bandeau vert, à côté du bouton Bilan & Clôture */}
+                  <button
+                    onClick={() => setShowSeanceComplete(true)}
+                    className="flex items-center gap-2 bg-blue-600
+                      hover:bg-blue-700 text-white px-4 py-2 rounded-lg
+                      text-sm font-medium transition">
+                    📋 Ordre du jour & Nouvelles
+                  </button>
+
+
                   {activeSeance.president_seance_nom && (
                     <span className="text-gray-500 text-sm">
                       Présidée par {activeSeance.president_seance_nom}
@@ -2688,7 +3279,35 @@ useEffect(() => {
         onClick={() => setShowDetailSeance(s.id)}
         className="flex items-center gap-2 text-gray-400 hover:text-blue-400 transition text-sm"
       >
-        <Eye size={16} /> Voir détail
+        <Eye size={16} /> Voir détail 
+        {/* À côté du bouton Eye dans l'historique */}
+
+          <a href={`/api/v1/pv/${s.id}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={e => {
+            // Ajouter le token dans le header via fetch
+            e.preventDefault();
+            const token = localStorage.getItem('token');
+            fetch(`/api/v1/pv/${s.id}`, {
+              headers: { Authorization: `Bearer ${token}` }
+            })
+            .then(res => res.blob())
+            .then(blob => {
+              const url = URL.createObjectURL(blob);
+              const a   = document.createElement('a');
+              a.href    = url;
+              a.download = `PV_Seance_${s.numero}.pdf`;
+              a.click();
+              URL.revokeObjectURL(url);
+            })
+            .catch(() => toast.error('Erreur téléchargement PDF'));
+          }}
+          className="flex items-center gap-2 bg-red-900/30
+            text-red-400 hover:bg-red-900/50 px-3 py-1.5
+            rounded-lg text-xs font-medium transition">
+          📄 PDF
+        </a>
       </button>
     </div>
   </div>
@@ -2788,6 +3407,17 @@ useEffect(() => {
 
         />
       )}
+
+      {showSeanceComplete && activeSeance && (
+        <SeanceCompleteModal
+          seanceId={activeSeance.id}
+          membres={membres}
+          token={localStorage.getItem('token')}
+          onClose={() => setShowSeanceComplete(false)}
+        />
+      )}
+
+
       {/* Modal Rubriques Financières */}
       {showRubriques && activeSeance && activeSeance.id && (
         <RubriquesModal

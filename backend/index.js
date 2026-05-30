@@ -17,6 +17,7 @@ const boufferRoutes    = require('./src/routes/bouffer');
 const dashboardRoutes = require('./src/routes/dashboard');
 const pvRoutes = require('./src/routes/pv');
 const nouvellesRoutes = require('./src/routes/nouvelles');
+const parametresRoutes = require('./src/routes/parametres');
 
 
 const app = express();
@@ -36,7 +37,7 @@ app.use('/api/v1/deductions',    deductionRoutes);
 app.use('/api/v1/bouffer',       boufferRoutes);
 app.use('/api/v1/pv', pvRoutes);
 app.use('/api/v1/seances', nouvellesRoutes);
-
+app.use('/api/v1/parametres', parametresRoutes);
 app.get('/', async (req, res) => {
   try {
     await pool.query('SELECT NOW()');
